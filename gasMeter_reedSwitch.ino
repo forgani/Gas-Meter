@@ -8,7 +8,7 @@
   Mohammad Forgani, Forghanain
   https://www.forgani.com/electronics-projects/gas-meter-counter-with-reed-switch-for-measurement/
   or
-  https://github.com/forgani/Gas-meter-counter
+  https://github.com/forgani/Gas-Meter
   
   The concept is to let ESP8266 to Light Sleep indefinitely, only to be waken up when the level changes from HIGH to LOW 
   on GPIO02 pin. 
