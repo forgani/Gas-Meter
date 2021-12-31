@@ -105,16 +105,16 @@ void loop() {
     WiFi.begin(ssid, pass);
     int counter = 0;
     int tryToConnect = true;
-	  while (tryToConnect) {
-		  delay(1000);
-		  Serial.print(".");
+    while (tryToConnect) {
+      delay(1000);
+      Serial.print(".");
       counter++;
       if (counter >= 10 || WiFi.status() == WL_CONNECTED) tryToConnect = false;
     }
     if (WiFi.status() != WL_CONNECTED) {
       Serial.println("Wifi connection failed!");
     } else {
-	    Serial.println("WiFi connected."); Serial.print("IP address:"); Serial.println(WiFi.localIP());
+      Serial.println("WiFi connected."); Serial.print("IP address:"); Serial.println(WiFi.localIP());
       Blynk.config(auth, BlynkServerIP, port);
       Connected2Blynk = Blynk.connect(); 
     
@@ -142,7 +142,7 @@ void loop() {
     Serial.println("LastDay: " + String(_lastDay) + "  Today: " + String(_today));
     
     if (_lastDay != _today) {
-      
+	if (_counter > 1000) _counter = 1; // dummy
         double kWh_24h = kWh_factor * (_counter/10);  // 1 pulse -> 100dm³
         Blynk.virtualWrite(vPIN_kWh_24h, kWh_24h);
         double kWh_daily_bill = (kWh_24h * calorific_value)/100; // €
@@ -155,10 +155,13 @@ void loop() {
     
     ESP.rtcUserMemoryWrite(0, &_counter, sizeof(_counter));
     Serial.println("Current meterCount: " + String(_counter));
-	  Blynk.virtualWrite(vPIN_CNT, String(_counter));
-   
+    Blynk.virtualWrite(vPIN_CNT, String(_counter));
+    delay(100);
+	
+    WiFi.disconnect();
+    WiFi.mode(WIFI_OFF);
     while(digitalRead(LIGHT_WAKE_PIN) == LOW) {
-      delay(500);
+      delay(3000);
     } 
     wifi_set_sleep_type(NONE_SLEEP_T);
     delay(100);
