@@ -88,14 +88,16 @@ void callback() {
  
 void loop() {
     Serial.println("Enter light sleep mode");
-    delay(100);
+    // wifi_station_disconnect(); //not needed
     // wake-up function can be enabled.
-    gpio_pin_wakeup_enable(GPIO_ID_PIN(LIGHT_WAKE_PIN), GPIO_PIN_INTR_LOLEVEL);
-    wifi_set_opmode(NULL_MODE);
+    // wake-up function can be enabled.
     wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
-    wifi_fpm_open();
+    gpio_pin_wakeup_enable(GPIO_ID_PIN(LIGHT_WAKE_PIN), GPIO_PIN_INTR_LOLEVEL);
+    wifi_fpm_open(); // Enables force sleep
     wifi_fpm_set_wakeup_cb(callback);
+    wifi_set_opmode(NULL_MODE); //set wifi mode to null mode.
     wifi_fpm_do_sleep(FPM_SLEEP_MAX_TIME);
+    
     delay(100);
     
     Serial.println("Exit light sleep mode");
@@ -157,14 +159,13 @@ void loop() {
     Serial.println("Current meterCount: " + String(_counter));
     Blynk.virtualWrite(vPIN_CNT, String(_counter));
     delay(100);
-	
+    //wifi_station_disconnect();
     WiFi.disconnect();
     WiFi.mode(WIFI_OFF);
     while(digitalRead(LIGHT_WAKE_PIN) == LOW) {
       delay(3000);
     } 
-    wifi_set_sleep_type(NONE_SLEEP_T);
-    delay(100);
+    //wifi_set_sleep_type(NONE_SLEEP_T);
 } 
 
 // This function will run every time Blynk connection is established
