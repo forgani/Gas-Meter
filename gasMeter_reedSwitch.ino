@@ -40,18 +40,33 @@ uint32_t _lastDay = 0;
 uint32_t _today = 0;
 
 //----------------BLYNK Virtual Pins -----
-#define vPIN_CNT  V91
-#define vPIN_DATE V92
-#define vPIN_kWh_24h          V93
-#define vPIN_bill_24h         V94
-#define vPIN_CALIBRATION_calorific_value  V95
-#define vPIN_CALIBRATION_kWh_factor       V96
+#define vPIN_CNT  				V91
+#define vPIN_DATE 				V92
+#define vPIN_kWh_24h          			V93
+#define vPIN_bill_24h         			V94
+#define vPIN_CALIBRATION_calorific_value  	V95
+#define vPIN_CALIBRATION_kWh_factor       	V96
+#define vPIN_voltage       			V97
+#define vPIN_CALIBRATION_bat 			V98
 
 #define BLYNK_PRINT Serial 
 
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
+
+//
+int analogInPin = A0;        // Analog channel A0 as used to measure battery voltage
+/*
+Vin = 4.2V      Max Input Voltage
+R1 = 15k
+R2 = 50k
+Vout max = 1.0V  by 1023bit
+Vout = (R2/(R1+R2))*Vin => 0.969V  is Okay
+Resistors Ration Factor = Max Input Voltage/1023 => 4.2V/1023bit = 0.0041
+*/
+float calibration = 0.0041; // Resistors Ration Factor
+//
 
 //B L Y N K    C O N N E C T I O N
 char auth[] = "xxx"; 
@@ -70,15 +85,20 @@ void setup() {
   pinMode (LIGHT_WAKE_PIN, INPUT);
   Blynk.virtualWrite(vPIN_CALIBRATION_calorific_value, calorific_value);
   Blynk.virtualWrite(vPIN_CALIBRATION_kWh_factor, kWh_factor);
+  Blynk.virtualWrite(vPIN_CALIBRATION_bat, calibration);
+  pinMode(A0, INPUT);
   
   //...
 }
 
-BLYNK_WRITE(vPIN_CALIBRATION_calorific_value) {// calibration slider 50 to 70  
+BLYNK_WRITE(vPIN_CALIBRATION_calorific_value) {// calibration slider 
   calorific_value = param.asDouble();
 }
-BLYNK_WRITE(vPIN_CALIBRATION_kWh_factor) {// calibration slider 50 to 70  
+BLYNK_WRITE(vPIN_CALIBRATION_kWh_factor) {// calibration slider
   kWh_factor = param.asDouble();
+}
+BLYNK_WRITE(vPIN_CALIBRATION_bat) {// calibration slider for battery
+  calibration = param.asDouble();
 }
 
 void callback() {
@@ -158,7 +178,16 @@ void loop() {
     ESP.rtcUserMemoryWrite(0, &_counter, sizeof(_counter));
     Serial.println("Current meterCount: " + String(_counter));
     Blynk.virtualWrite(vPIN_CNT, String(_counter));
+
+    // Measure battery voltage 
+    int nVoltageRaw = analogRead(analogInPin);         //Read analog Voltage
+    //multiply by two as voltage divider network is 15K & 50K Resistor
+    float fVoltage = (float)nVoltageRaw * calibration;
+    Serial.print("Current voltage is :" + String(fVoltage));
+    Blynk.virtualWrite(vPIN_voltage, fVoltage);
+    
     delay(100);
+	
     //wifi_station_disconnect();
     WiFi.disconnect();
     WiFi.mode(WIFI_OFF);
