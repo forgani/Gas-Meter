@@ -14,6 +14,7 @@
   on GPIO02 pin. 
   
   initial version 10 Dec. 2021
+  update on 08 Nov. 2022 fixed for Arduino 2.0
   Generic esp8266
 ******************************************************************************/
 #include "Arduino.h"
@@ -25,7 +26,7 @@
 
 // Required for LIGHT_SLEEP_T delay mode
 extern "C" {
-#include "user_interface.h"
+  #include "user_interface.h"
 }
 // Sleep for longest possible time
 #define FPM_SLEEP_MAX_TIME    0xFFFFFFF
@@ -38,6 +39,8 @@ bool Connected2Blynk = false;
 uint32_t _counter = 0;
 uint32_t _lastDay = 0;
 uint32_t _today = 0;
+uint32_t cnt = 0;
+bool tryToConnect = true;
 
 //----------------BLYNK Virtual Pins -----
 #define vPIN_CNT  				V91
@@ -79,79 +82,92 @@ int port = xxx;
 void setup() {
   Serial.begin(115200);
   //while(!Serial) { }
-  delay(100);
+	
   Serial.println();
+  gpio_init(); // Initilise GPIO pins
+	
   Serial.println("Start device in normal mode!");
   pinMode (LIGHT_WAKE_PIN, INPUT);
   Blynk.virtualWrite(vPIN_CALIBRATION_calorific_value, calorific_value);
   Blynk.virtualWrite(vPIN_CALIBRATION_kWh_factor, kWh_factor);
-  Blynk.virtualWrite(vPIN_CALIBRATION_bat, calibration);
-  pinMode(A0, INPUT);
   
   //...
+  // Force the ESP into client-only mode 
+  WiFi.mode(WIFI_STA); 
+  // Enable light sleep 
+  wifi_set_sleep_type(LIGHT_SLEEP_T);
+  Serial.println("setup done");
 }
 
 BLYNK_WRITE(vPIN_CALIBRATION_calorific_value) {// calibration slider 
   calorific_value = param.asDouble();
 }
+
 BLYNK_WRITE(vPIN_CALIBRATION_kWh_factor) {// calibration slider
   kWh_factor = param.asDouble();
 }
-BLYNK_WRITE(vPIN_CALIBRATION_bat) {// calibration slider for battery
-  calibration = param.asDouble();
+
+void sleepNow(){
+  Serial.println("Enter light sleep mode");
+  wifi_station_disconnect();
+  wifi_set_opmode_current(NULL_MODE);
+  wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
+  wifi_fpm_open(); // Enables force sleep
+  gpio_pin_wakeup_enable(GPIO_ID_PIN(LIGHT_WAKE_PIN), GPIO_PIN_INTR_LOLEVEL);  //   GPIO_PIN_INTR_NEGEDGE
+  delay(500);
+  wifi_fpm_set_wakeup_cb(wakeupFromMotion);
+  wifi_fpm_do_sleep(FPM_SLEEP_MAX_TIME); // Sleep for longest possible time
+  delay(500);
 }
 
-void callback() {
-  Serial.println("Callback");
-  Serial.flush();
+void wakeupFromMotion(void) {
+  wifi_set_sleep_type(NONE_SLEEP_T);
+  gpio_pin_wakeup_disable();
+  wifi_fpm_close();
+  wifi_set_opmode(STATION_MODE);
+  wifi_station_connect();
+  Serial.println("Woke up from sleep");
 }
+
+void initWifi() {
+  Serial.println("Connecting to wifi...");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, pass);
+  int cnt = 0;
+  int tryToConnect = true;
+  while (tryToConnect) {
+	  delay(1000);
+	  Serial.print(".");
+    cnt++;
+    if (cnt >= 10 || WiFi.status() == WL_CONNECTED) tryToConnect = false;
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Wifi connection failed!");
+  } else {
+	  Serial.println("WiFi connected."); Serial.print("IP address:"); Serial.println(WiFi.localIP());
+    Blynk.config(auth, BlynkServerIP, port);
+    Blynk.connect(); 
+    
+    if (Blynk.connected() == false) {
+      Serial.println("Not connected to Blynk server");
+      Blynk.connect(); // try to connect to server with default timeout
+    } 
+    
+    if (Blynk.connected() == true){
+      Serial.println("Connected to Blynk server");
+      Blynk.run();
+    } 
+    
+    timeClient.begin();
+  }
+  timeClient.update();
+} 
+
  
 void loop() {
-    Serial.println("Enter light sleep mode");
-    // wifi_station_disconnect(); //not needed
-    // wake-up function can be enabled.
-    // wake-up function can be enabled.
-    wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
-    gpio_pin_wakeup_enable(GPIO_ID_PIN(LIGHT_WAKE_PIN), GPIO_PIN_INTR_LOLEVEL);
-    wifi_fpm_open(); // Enables force sleep
-    wifi_fpm_set_wakeup_cb(callback);
-    wifi_set_opmode(NULL_MODE); //set wifi mode to null mode.
-    wifi_fpm_do_sleep(FPM_SLEEP_MAX_TIME);
-    
-    delay(100);
-    
+    sleepNow();
     Serial.println("Exit light sleep mode");
-    Serial.println("Connecting to wifi...");
-    // Start WiFi-Connection
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, pass);
-    int counter = 0;
-    int tryToConnect = true;
-    while (tryToConnect) {
-      delay(1000);
-      Serial.print(".");
-      counter++;
-      if (counter >= 10 || WiFi.status() == WL_CONNECTED) tryToConnect = false;
-    }
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("Wifi connection failed!");
-    } else {
-      Serial.println("WiFi connected."); Serial.print("IP address:"); Serial.println(WiFi.localIP());
-      Blynk.config(auth, BlynkServerIP, port);
-      Connected2Blynk = Blynk.connect(); 
-    
-      if (!Blynk.connected()) {
-        Serial.println("Not connected to Blynk server");
-        Blynk.connect(); // try to connect to server with default timeout
-      }
-    
-      if (Blynk.connected()){
-        Serial.println("Connected to Blynk server");
-        Blynk.run();
-      } 
-      timeClient.begin();
-    }
-    timeClient.update();
+    initWifi();
 
     Blynk.virtualWrite(vPIN_DATE, timeClient.getFormattedTime());
     Serial.println("Date: " + String(timeClient.getFormattedTime()));
@@ -164,8 +180,7 @@ void loop() {
     Serial.println("LastDay: " + String(_lastDay) + "  Today: " + String(_today));
     
     if (_lastDay != _today) {
-	if (_counter > 1000) _counter = 1; // dummy
-        double kWh_24h = kWh_factor * (_counter/10);  // 1 pulse -> 100dm³
+        double kWh_24h = kWh_factor * (_counter/10) * 24;  // 1 pulse -> 100dm³
         Blynk.virtualWrite(vPIN_kWh_24h, kWh_24h);
         double kWh_daily_bill = (kWh_24h * calorific_value)/100; // €
         Blynk.virtualWrite(vPIN_bill_24h, kWh_daily_bill);
@@ -177,31 +192,20 @@ void loop() {
     
     ESP.rtcUserMemoryWrite(0, &_counter, sizeof(_counter));
     Serial.println("Current meterCount: " + String(_counter));
-    Blynk.virtualWrite(vPIN_CNT, String(_counter));
+	  Blynk.virtualWrite(vPIN_CNT, String(_counter));
 
-    // Measure battery voltage 
-    int nVoltageRaw = analogRead(analogInPin);         //Read analog Voltage
-    //multiply by two as voltage divider network is 15K & 50K Resistor
-    float fVoltage = (float)nVoltageRaw * calibration;
-    Serial.print("Current voltage is :" + String(fVoltage));
-    Blynk.virtualWrite(vPIN_voltage, fVoltage);
-    
-    delay(100);
-	
-    //wifi_station_disconnect();
-    WiFi.disconnect();
-    WiFi.mode(WIFI_OFF);
+    wifi_station_disconnect();
+    wifi_set_opmode_current(NULL_MODE);
+    wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
+    wifi_fpm_open(); // Enables force sleep
+
     while(digitalRead(LIGHT_WAKE_PIN) == LOW) {
-      delay(3000);
+      delay(500);
     } 
-    //wifi_set_sleep_type(NONE_SLEEP_T);
+    delay(100);
 } 
 
 // This function will run every time Blynk connection is established
 BLYNK_CONNECTED() {
-  if (Connected2Blynk) {
-    // Request Blynk server to re-send latest values for all pins
-    Blynk.syncAll();
-    Connected2Blynk = false;
-  }
+  Blynk.syncAll();
 }
